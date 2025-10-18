@@ -1,0 +1,30 @@
+services:
+  # ACME client with nginx serving HTTP-01 challenges on port 80
+  # Includes certbot for certificate management
+  acme-client:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    # Or use the pre-built image:
+    image: h4x3rotab/dstack-http01-test:latest
+    container_name: dstack-acme-client
+    ports:
+      - "80:80"
+    volumes:
+      # Persist certificates across container restarts
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+      - certbot-logs:/var/log/letsencrypt
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  certbot-conf:
+  certbot-www:
+  certbot-logs:
