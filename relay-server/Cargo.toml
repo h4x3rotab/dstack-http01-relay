@@ -1,0 +1,32 @@
+[package]
+name = "relay-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+
+# HTTP server
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
+
+# DNS resolution
+hickory-resolver = "0.24"
+
+# Regex for domain validation
+regex = "1.10"
+
+# Metrics
+prometheus = "0.13"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+
+# Environment variables
+dotenvy = "0.15"
