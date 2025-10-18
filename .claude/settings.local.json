@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo init:*)",
+      "Bash(cargo check:*)",
+      "Bash(dig A http01-test.phala.systems +short)",
+      "Bash(dig TXT _dstack_app_address.http01-test.phala.systems)",
+      "Bash(cargo run)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
