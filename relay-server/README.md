@@ -17,7 +17,7 @@ This server solves the problem of ACME HTTP-01 challenges when dstack applicatio
 1. ACME client generates challenge and serves it at `https://{app-id}.{gateway-domain}/.well-known/acme-challenge/{token}`
 2. Let's Encrypt requests `http://{custom-domain}/.well-known/acme-challenge/{token}`
 3. This relay server:
-   - Looks up `TXT _dstack_app_address.{custom-domain}` → gets `{app-id}:port`
+   - Looks up `TXT _dstack-app-address.{custom-domain}` → gets `{app-id}:port`
    - Looks up `CNAME {custom-domain}` → gets `_.{gateway-base-domain}`
    - Redirects to `https://{app-id}.{gateway-domain}/.well-known/acme-challenge/{token}`
 4. Let's Encrypt follows the redirect and validates the challenge
@@ -27,13 +27,13 @@ This server solves the problem of ACME HTTP-01 challenges when dstack applicatio
 For each custom domain, configure:
 
 ```
-TXT _dstack_app_address.{custom-domain}  {app-id}:port
+TXT _dstack-app-address.{custom-domain}  {app-id}:port
 CNAME {custom-domain}                    _.{gateway-base-domain}
 ```
 
 Example:
 ```
-TXT _dstack_app_address.http01-test.phala.systems  my-app-123:80
+TXT _dstack-app-address.http01-test.phala.systems  my-app-123:80
 CNAME http01-test.phala.systems                    _.prod5.phala.network
 ```
 
@@ -60,31 +60,85 @@ cargo run
 
 ### Docker
 
+**Using docker run:**
 ```bash
-# Build the image
-docker build -t dstack-relay-server .
+# Pull the pre-built image
+docker pull h4x3rotab/dstack-http01-relay-server:latest
 
-# Run the container (requires privileged port binding)
-docker run -p 80:80 dstack-relay-server
+# Run the container
+docker run -p 8081:8081 h4x3rotab/dstack-http01-relay-server:latest
+
+# Run on port 80 (requires privileged port binding)
+docker run -p 80:80 -e PORT=80 h4x3rotab/dstack-http01-relay-server:latest
+```
+
+**Using docker-compose (recommended):**
+```bash
+# Basic setup (port 8081)
+docker-compose up -d
+
+# With nginx proxy (port 80)
+docker-compose -f docker-compose.nginx.yml up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+**Or build locally:**
+```bash
+docker build -t dstack-relay-server .
 ```
 
 ### Production Deployment
 
 The server must be deployed on a machine that:
-- Can bind to port 80
-- Is reachable from the internet
+- Is reachable from the internet on port 80
 - Can perform DNS lookups
 
+**Option 1: Direct port 80 binding (requires root)**
 ```bash
-# Run with systemd or as a Docker container
 sudo docker run -d \
   --name relay-server \
   --restart unless-stopped \
   -p 80:80 \
+  -e PORT=80 \
   -e RUST_LOG=relay_server=info \
   -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
   -e ALLOWED_DOMAIN_REGEX='^_\.(.+\.phala\.network)$' \
-  dstack-relay-server
+  h4x3rotab/dstack-http01-relay-server:latest
+```
+
+**Option 2: Behind nginx (recommended)**
+```bash
+# Run relay server on port 8081
+docker run -d \
+  --name relay-server \
+  --restart unless-stopped \
+  -p 8081:8081 \
+  -e RUST_LOG=relay_server=info \
+  -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
+  h4x3rotab/dstack-http01-relay-server:latest
+
+# Configure nginx to proxy port 80 to 8081
+# See nginx configuration example below
+```
+
+**Nginx configuration** (`/etc/nginx/sites-available/relay-server`):
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://localhost:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
 ```
 
 ## Configuration

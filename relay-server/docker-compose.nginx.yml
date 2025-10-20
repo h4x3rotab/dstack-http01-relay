@@ -1,0 +1,52 @@
+version: '3.8'
+
+# Docker Compose with nginx proxy
+# This setup runs the relay server on port 8081 and nginx on port 80
+
+services:
+  relay-server:
+    image: h4x3rotab/dstack-http01-relay-server:latest
+    container_name: dstack-relay-server
+    restart: unless-stopped
+    expose:
+      - "8081"
+    environment:
+      PORT: 8081
+      RUST_LOG: relay_server=info
+      FALLBACK_GATEWAY_DOMAIN: prod5.phala.network
+      ALLOWED_DOMAIN_REGEX: '^_\.(.+\.phala\.network)$$'
+      GATEWAY_DOMAIN_CAPTURE_GROUP: 1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  nginx:
+    image: nginx:alpine
+    container_name: relay-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      relay-server:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/nginx-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

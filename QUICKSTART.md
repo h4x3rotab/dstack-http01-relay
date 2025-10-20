@@ -49,15 +49,27 @@ Expected: "test-response" is returned.
 
 1. **Deploy Relay Server**
    ```bash
-   # On your public server
-   cd relay-server
-   docker build -t dstack-relay-server .
+   # Pull the pre-built image
+   docker pull h4x3rotab/dstack-http01-relay-server:latest
+
+   # Run on port 80 (requires root)
    docker run -d \
      --name relay-server \
      --restart unless-stopped \
      -p 80:80 \
+     -e PORT=80 \
      -e RUST_LOG=relay_server=info \
-     dstack-relay-server
+     -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
+     h4x3rotab/dstack-http01-relay-server:latest
+
+   # OR run on 8081 and proxy with nginx (recommended)
+   docker run -d \
+     --name relay-server \
+     --restart unless-stopped \
+     -p 8081:8081 \
+     -e RUST_LOG=relay_server=info \
+     -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
+     h4x3rotab/dstack-http01-relay-server:latest
    ```
 
 2. **Configure DNS**
@@ -69,7 +81,7 @@ Expected: "test-response" is returned.
 
    ```
    A {custom-domain}                            {relay-ip}
-   TXT _dstack_app_address.{custom-domain}      {app-id}:80
+   TXT _dstack-app-address.{custom-domain}      {app-id}:80
    CNAME {custom-domain}                        _.prod5.phala.network
    ```
 
@@ -112,7 +124,7 @@ curl http://{relay-ip}/health
 Check DNS records are configured correctly:
 ```bash
 # Check TXT record
-dig TXT _dstack_app_address.{custom-domain}
+dig TXT _dstack-app-address.{custom-domain}
 
 # Check CNAME record
 dig CNAME {custom-domain}
@@ -144,7 +156,7 @@ dig CNAME {custom-domain}
 
 # 1. DNS Configuration
 A myapp.example.com                               203.0.113.10
-TXT _dstack_app_address.myapp.example.com         my-app-12345:80
+TXT _dstack-app-address.myapp.example.com         my-app-12345:80
 CNAME myapp.example.com                           _.prod5.phala.network
 
 # 2. Test the flow

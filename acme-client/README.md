@@ -56,7 +56,7 @@ curl http://localhost/.well-known/acme-challenge/test-token
 
 4. Update your DNS records:
    ```
-   TXT _dstack_app_address.{custom-domain}  {app-id}:80
+   TXT _dstack-app-address.{custom-domain}  {app-id}:80
    CNAME {custom-domain}                    _.{gateway-base-domain}
    ```
 

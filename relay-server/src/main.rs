@@ -171,7 +171,7 @@ Endpoints:
 How it works:
 1. Let's Encrypt requests http://{custom-domain}/.well-known/acme-challenge/{token}
 2. This server looks up DNS records:
-   - TXT _dstack_app_address.{custom-domain} -> {app-id}:port
+   - TXT _dstack-app-address.{custom-domain} -> {app-id}:port
    - CNAME {custom-domain} -> _.{gateway-base-domain}
 3. Redirects to https://{app-id}.{gateway-base-domain}/.well-known/acme-challenge/{token}
 4. The ACME client in dstack responds with the challenge

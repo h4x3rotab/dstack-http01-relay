@@ -3,7 +3,7 @@
 Goal is to create a http01 challenge solver for dstack. dstack expose docker http ports to https automatically via dstack-gateway using auto allocated subdomains. However, if the client wants to generate a custom cert for their custom domain, the most commonly used acme challenge http-01 doesn't work, because we don't expose port 80.
 
 To solve this problem, we can create a standalone rust web service that listen to 80 port. The dev needs to set up:
-- `TXT _dstack_app_address.{custom-domain}`: `{app_id}:port`
+- `TXT _dstack-app-address.{custom-domain}`: `{app_id}:port`
 - `CNAME {custom-domain}`: `_.{gateway-base-domain}`
 - an acme client listenting to port 80 in dstack, exposed as `https://{app-id}.{gateway-base-domain}`
 
@@ -16,7 +16,7 @@ Then we can follow the protocol as below to allow http-01 challenge:
 3. acme client serves the token under `https://{app-id}.{domain}/.well-known/acme-challenge/{t}` with `hash(s)`
 4. let's encrypt request `http://{custom-domain}/.well-known/acme-challenge/{t}`
 5. our relay server received the request
-	1. look up dns record `TXT _dstack_app_address.{custom-domain}`, get `{app-id}`
+	1. look up dns record `TXT _dstack-app-address.{custom-domain}`, get `{app-id}`
 	2. look up dns record `CNAME {custom-domain}`, get `_.{gateway-base-domain}`
 6. redirect to `https://{app-id}.{domain}/.well-known/acme-challenge/{t}`
 7. let's encrypt accept the solution, and authenticate s
@@ -69,8 +69,8 @@ cargo build --release
 sudo ./target/release/relay-server
 
 # Or using Docker
-docker build -t relay-server .
-docker run -p 80:80 relay-server
+docker pull h4x3rotab/dstack-http01-relay-server:latest
+docker run -p 8081:8081 h4x3rotab/dstack-http01-relay-server:latest
 ```
 
 ## Deployment Guide
@@ -79,13 +79,32 @@ docker run -p 80:80 relay-server
 
 Deploy the relay server on a machine with:
 - Public IP address
-- Port 80 accessible from the internet
+- Port 80 accessible from the internet (or use nginx to proxy)
 - DNS resolution capability
 
+**Option A: Direct on port 80**
 ```bash
-cd relay-server
-docker build -t dstack-relay-server .
-docker run -d --name relay-server --restart unless-stopped -p 80:80 dstack-relay-server
+docker pull h4x3rotab/dstack-http01-relay-server:latest
+docker run -d \
+  --name relay-server \
+  --restart unless-stopped \
+  -p 80:80 \
+  -e PORT=80 \
+  -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
+  h4x3rotab/dstack-http01-relay-server:latest
+```
+
+**Option B: Behind nginx on port 8081 (recommended)**
+```bash
+docker pull h4x3rotab/dstack-http01-relay-server:latest
+docker run -d \
+  --name relay-server \
+  --restart unless-stopped \
+  -p 8081:8081 \
+  -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
+  h4x3rotab/dstack-http01-relay-server:latest
+
+# Then configure nginx to proxy port 80 to localhost:8081
 ```
 
 ### Step 2: Configure DNS
@@ -97,7 +116,7 @@ For your custom domain (e.g., `http01-test.phala.systems`):
 A http01-test.phala.systems         <relay-server-ip>
 
 # Configure dstack app address
-TXT _dstack_app_address.http01-test.phala.systems  {app-id}:80
+TXT _dstack-app-address.http01-test.phala.systems  {app-id}:80
 
 # Configure gateway domain
 CNAME http01-test.phala.systems     _.prod5.phala.network

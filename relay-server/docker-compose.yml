@@ -1,0 +1,27 @@
+services:
+  relay-server:
+    image: h4x3rotab/dstack-http01-relay-server:latest
+    container_name: dstack-relay-server
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: 8081
+      RUST_LOG: relay_server=info
+      FALLBACK_GATEWAY_DOMAIN: prod5.phala.network
+      ALLOWED_DOMAIN_REGEX: '^_\.(.+\.phala\.network)$$'
+      GATEWAY_DOMAIN_CAPTURE_GROUP: 1
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:$${PORT:-8081}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
