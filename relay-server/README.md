@@ -1,14 +1,6 @@
 # HTTP-01 ACME Challenge Relay Server
 
-A Rust-based relay server that enables HTTP-01 ACME challenges for dstack applications with custom domains.
-
-## Overview
-
-This server solves the problem of ACME HTTP-01 challenges when dstack applications don't expose port 80 directly. It acts as a relay by:
-
-1. Receiving HTTP-01 challenge requests on port 80
-2. Looking up DNS records to find the corresponding dstack application
-3. Redirecting the challenge request to the HTTPS endpoint of the dstack application
+A Rust-based relay server that receives HTTP-01 ACME challenges on port 80, performs DNS lookups, and redirects to dstack applications running on HTTPS.
 
 ## How It Works
 
@@ -60,85 +52,81 @@ cargo run
 
 ### Docker
 
-**Using docker run:**
+**Pull and run:**
 ```bash
 # Pull the pre-built image
 docker pull h4x3rotab/dstack-http01-relay-server:latest
 
-# Run the container
-docker run -p 8081:8081 h4x3rotab/dstack-http01-relay-server:latest
+# Run on port 8081 (recommended)
+docker run -d \
+  --name relay-server \
+  --restart unless-stopped \
+  -p 8081:8081 \
+  -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
+  h4x3rotab/dstack-http01-relay-server:latest
 
 # Run on port 80 (requires privileged port binding)
-docker run -p 80:80 -e PORT=80 h4x3rotab/dstack-http01-relay-server:latest
+docker run -d \
+  --name relay-server \
+  --restart unless-stopped \
+  -p 80:80 \
+  -e PORT=80 \
+  -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
+  h4x3rotab/dstack-http01-relay-server:latest
 ```
 
-**Using docker-compose (recommended):**
+**Using docker-compose:**
+
+The repository includes docker-compose configurations:
+- `docker-compose.yml` - Basic setup (port 8081)
+- `docker-compose.nginx.yml` - With nginx proxy (port 80)
+
 ```bash
-# Basic setup (port 8081)
+# Basic setup
 docker-compose up -d
 
-# With nginx proxy (port 80)
+# With nginx proxy (recommended for production)
 docker-compose -f docker-compose.nginx.yml up -d
 
 # View logs
-docker-compose logs -f
+docker-compose logs -f relay-server
 
 # Stop
 docker-compose down
 ```
 
-**Or build locally:**
+**Build locally:**
 ```bash
-docker build -t dstack-relay-server .
+docker build -t h4x3rotab/dstack-http01-relay-server:latest .
 ```
 
 ### Production Deployment
 
-The server must be deployed on a machine that:
-- Is reachable from the internet on port 80
-- Can perform DNS lookups
+**Requirements:**
+- Machine reachable from the internet on port 80
+- DNS resolution capability
 
-**Option 1: Direct port 80 binding (requires root)**
+**Recommended setup (using docker-compose with nginx):**
 ```bash
-sudo docker run -d \
+# Use the nginx compose file for production
+docker-compose -f docker-compose.nginx.yml up -d
+```
+
+This configuration:
+- Runs relay server on port 8081 internally
+- Uses nginx to proxy port 80 to the relay server
+- Preserves the Host header (critical for DNS lookups)
+- Includes health checks and logging
+
+**Alternative (direct port 80):**
+```bash
+docker run -d \
   --name relay-server \
   --restart unless-stopped \
   -p 80:80 \
   -e PORT=80 \
-  -e RUST_LOG=relay_server=info \
-  -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
-  -e ALLOWED_DOMAIN_REGEX='^_\.(.+\.phala\.network)$' \
-  h4x3rotab/dstack-http01-relay-server:latest
-```
-
-**Option 2: Behind nginx (recommended)**
-```bash
-# Run relay server on port 8081
-docker run -d \
-  --name relay-server \
-  --restart unless-stopped \
-  -p 8081:8081 \
-  -e RUST_LOG=relay_server=info \
   -e FALLBACK_GATEWAY_DOMAIN=prod5.phala.network \
   h4x3rotab/dstack-http01-relay-server:latest
-
-# Configure nginx to proxy port 80 to 8081
-# See nginx configuration example below
-```
-
-**Nginx configuration** (`/etc/nginx/sites-available/relay-server`):
-```nginx
-server {
-    listen 80;
-    server_name _;
-
-    location / {
-        proxy_pass http://localhost:8081;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
 ```
 
 ## Configuration
@@ -208,12 +196,15 @@ RUST_LOG=relay_server=trace,tower_http=debug
 # Run unit tests
 cargo test
 
-# Test the server manually
-curl -v http://localhost/.well-known/acme-challenge/test-token \
-  -H "Host: http01-test.phala.systems"
-```
+# Health check
+curl http://localhost:8081/health
 
-Expected response: `307 Temporary Redirect` to the dstack HTTPS URL.
+# Test the server manually (requires DNS records to be set)
+curl -v http://localhost:8081/.well-known/acme-challenge/test-token \
+  -H "Host: http01-test.phala.systems"
+
+# Expected: 307 Temporary Redirect to dstack HTTPS URL
+```
 
 ## Security Considerations
 

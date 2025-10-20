@@ -1,8 +1,8 @@
 # dstack ACME Client
 
-A simple Docker image for serving ACME HTTP-01 challenges in dstack.
+A Docker image for serving ACME HTTP-01 challenges in dstack.
 
-## What it does
+## Features
 
 - Runs nginx on port 80
 - Serves ACME challenge files from `/.well-known/acme-challenge/`
@@ -12,13 +12,12 @@ A simple Docker image for serving ACME HTTP-01 challenges in dstack.
 ## Building
 
 ```bash
-# Build the Docker image
 docker build -t dstack-acme-client:latest .
 ```
 
 ## Running Locally
 
-### Option 1: Docker Run
+### Docker Run
 ```bash
 # Run the container
 docker run -d -p 80:80 --name acme-client dstack-acme-client:latest
@@ -30,7 +29,7 @@ docker exec acme-client sh -c 'echo "test-response" > /var/www/certbot/.well-kno
 curl http://localhost/.well-known/acme-challenge/test-token
 ```
 
-### Option 2: Docker Compose
+### Docker Compose
 ```bash
 # Start the service
 docker-compose up -d
@@ -42,9 +41,9 @@ docker exec dstack-acme-client sh -c 'echo "test-response" > /var/www/certbot/.w
 curl http://localhost/.well-known/acme-challenge/test-token
 ```
 
-## Running in dstack
+## Deploying to dstack
 
-1. Push the image to a registry:
+1. Build and push the image to a registry:
    ```bash
    docker tag dstack-acme-client:latest your-registry/dstack-acme-client:latest
    docker push your-registry/dstack-acme-client:latest
@@ -54,11 +53,7 @@ curl http://localhost/.well-known/acme-challenge/test-token
 
 3. Note the assigned `app-id` from dstack
 
-4. Update your DNS records:
-   ```
-   TXT _dstack-app-address.{custom-domain}  {app-id}:80
-   CNAME {custom-domain}                    _.{gateway-base-domain}
-   ```
+4. Configure DNS records for your custom domain (see main [README.md](../README.md) for DNS setup)
 
 ## Requesting a Certificate
 
@@ -80,10 +75,10 @@ certbot certonly \
 # Certificates will be in /etc/letsencrypt/live/your-custom-domain.com/
 ```
 
-**Note:** Make sure your DNS is properly configured and the relay server is running before requesting a certificate. The ACME challenge flow requires:
-1. Relay server receiving `http://your-custom-domain/.well-known/acme-challenge/{token}`
-2. Relay server redirecting to `https://{app-id}.{gateway-domain}/.well-known/acme-challenge/{token}`
-3. This container serving the challenge file from `/var/www/certbot/.well-known/acme-challenge/{token}`
+**Prerequisites:**
+- DNS records properly configured
+- Relay server running and accessible on port 80
+- ACME client deployed in dstack with assigned app-id
 
 ## Endpoints
 
