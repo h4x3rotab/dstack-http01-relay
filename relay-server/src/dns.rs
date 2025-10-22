@@ -72,10 +72,10 @@ impl DnsResolver {
         })
     }
 
-    /// Look up the TXT record for _dsatck-app-address.{domain}
+    /// Look up the TXT record for _dstack-app-address.{domain}
     /// Returns the app-id and port in format "app-id:port"
     pub async fn lookup_app_address(&self, domain: &str) -> Result<(String, String), DnsError> {
-        let txt_domain = format!("_dsatck-app-address.{}", domain);
+        let txt_domain = format!("_dstack-app-address.{}", domain);
 
         info!("Looking up TXT record for: {}", txt_domain);
 

@@ -5,7 +5,8 @@
       "Bash(cargo check:*)",
       "Bash(dig A http01-test.phala.systems +short)",
       "Bash(dig TXT _dstack_app_address.http01-test.phala.systems)",
-      "Bash(cargo run)"
+      "Bash(cargo run)",
+      "Bash(docker build -t h4x3rotab/dstack-http01-relay-server:latest .)"
     ],
     "deny": [],
     "ask": []
