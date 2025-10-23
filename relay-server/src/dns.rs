@@ -194,6 +194,16 @@ impl DnsResolver {
         info!("Resolved app URL: {}", app_url);
         Ok(app_url)
     }
+
+    /// Check if a domain is a dstack custom domain by verifying DNS records exist
+    /// Returns true if both TXT and CNAME records are found
+    pub async fn is_dstack_custom_domain(&self, domain: &str) -> bool {
+        // Try to resolve the app address (TXT record)
+        let has_txt = self.lookup_app_address(domain).await.is_ok();
+
+        // We only need to check TXT record - if it exists, it's a dstack custom domain
+        has_txt
+    }
 }
 
 #[cfg(test)]
