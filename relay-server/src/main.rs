@@ -6,7 +6,7 @@ use axum::{
     extract::{Host, Path, Request, State},
     http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    routing::{any, get},
+    routing::any,
     Router,
 };
 use futures_util::StreamExt;
@@ -105,7 +105,8 @@ async fn main() {
         .route("/.well-known/acme-challenge/:token", any(acme_challenge_handler))
         .route("/metrics", any(metrics_handler))
         .route("/health", any(health_handler))
-        .route("/", get(root_handler))
+        .route("/", any(root_handler))
+        .route("/*path", any(catch_all_handler))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -432,8 +433,31 @@ async fn health_handler(
     (StatusCode::OK, "OK").into_response()
 }
 
-/// Root handler for informational purposes
-async fn root_handler(State(state): State<AppState>) -> Response {
+/// Root handler for the "/" path
+/// Acts as transparent proxy/redirector for dstack domains, serves info page for relay server
+async fn root_handler(
+    State(state): State<AppState>,
+    req: Request,
+) -> Response {
+    let (parts, body) = req.into_parts();
+
+    // Extract Host header
+    let hostname = parts.headers.get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Check if this is a dstack custom domain
+    if state.dns_resolver.is_dstack_custom_domain(&hostname).await {
+        info!("Root path: relaying request for dstack domain {}", hostname);
+
+        // Relay to the backend with full request
+        return relay_to_backend(&state, &hostname, "/", &parts.method, &parts.headers, body).await;
+    }
+
+    // Not a dstack domain - serve relay server info page
+    info!("Root path: serving relay server info for non-dstack domain {}", hostname);
+
     let mode_description = match state.relay_mode {
         RelayMode::Redirect => "307 redirect (default)",
         RelayMode::Proxy => "HTTP proxy/tunnel",
@@ -473,4 +497,39 @@ Status: Running
     );
 
     (StatusCode::OK, info).into_response()
+}
+
+/// Catch-all handler for any path not matched by specific routes (except /)
+/// Acts as transparent proxy/redirector for dstack domains, returns 404 for relay server
+async fn catch_all_handler(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    req: Request,
+) -> Response {
+    let (parts, body) = req.into_parts();
+
+    // Extract Host header
+    let hostname = parts.headers.get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Normalize path (add leading slash if needed)
+    let normalized_path = if path.starts_with('/') {
+        path.clone()
+    } else {
+        format!("/{}", path)
+    };
+
+    // Check if this is a dstack custom domain
+    if state.dns_resolver.is_dstack_custom_domain(&hostname).await {
+        info!("Catch-all: relaying request for dstack domain {} to path {}", hostname, normalized_path);
+
+        // Relay to the backend with full request
+        return relay_to_backend(&state, &hostname, &normalized_path, &parts.method, &parts.headers, body).await;
+    }
+
+    // Not a dstack domain - return 404
+    info!("Catch-all: returning 404 for non-dstack domain {} path {}", hostname, normalized_path);
+    (StatusCode::NOT_FOUND, "Not Found").into_response()
 }
