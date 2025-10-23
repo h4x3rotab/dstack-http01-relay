@@ -313,6 +313,38 @@ fn is_upgrade_request(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+/// Helper function to handle requests with domain checking
+/// If Host is a dstack domain, relays to backend; otherwise calls the provided handler
+async fn handle_request_with_domain_check<F>(
+    state: &AppState,
+    path: &str,
+    req: Request,
+    non_dstack_handler: F,
+) -> Response
+where
+    F: FnOnce() -> Response,
+{
+    let (parts, body) = req.into_parts();
+
+    // Extract Host header
+    let hostname = parts.headers.get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Check if this is a dstack custom domain
+    if state.dns_resolver.is_dstack_custom_domain(&hostname).await {
+        info!("Request for dstack domain {} at path {}, relaying to backend", hostname, path);
+
+        // Relay to the backend with full request
+        return relay_to_backend(state, &hostname, path, &parts.method, &parts.headers, body).await;
+    }
+
+    // Not a dstack domain - call the provided handler
+    info!("Request for non-dstack domain {} at path {}", hostname, path);
+    non_dstack_handler()
+}
+
 /// Helper function to relay a request to the backend
 async fn relay_to_backend(
     state: &AppState,
@@ -381,30 +413,16 @@ async fn metrics_handler(
     State(state): State<AppState>,
     req: Request,
 ) -> Response {
-    let (parts, body) = req.into_parts();
-
-    // Extract Host header
-    let hostname = parts.headers.get("host")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string();
-
-    // Check if this is a dstack custom domain
-    if state.dns_resolver.is_dstack_custom_domain(&hostname).await {
-        info!("Metrics endpoint accessed with dstack custom domain: {}, relaying to backend", hostname);
-
-        // Relay to the backend with full request
-        return relay_to_backend(&state, &hostname, "/metrics", &parts.method, &parts.headers, body).await;
-    }
-
-    info!("Metrics endpoint accessed with non-dstack domain: {}, serving relay server metrics", hostname);
-    let metrics = metrics::gather_metrics();
-    (
-        StatusCode::OK,
-        [("content-type", "text/plain; version=0.0.4")],
-        metrics,
-    )
-        .into_response()
+    handle_request_with_domain_check(&state, "/metrics", req, || {
+        let metrics = metrics::gather_metrics();
+        (
+            StatusCode::OK,
+            [("content-type", "text/plain; version=0.0.4")],
+            metrics,
+        )
+            .into_response()
+    })
+    .await
 }
 
 /// Health check endpoint
@@ -413,24 +431,10 @@ async fn health_handler(
     State(state): State<AppState>,
     req: Request,
 ) -> Response {
-    let (parts, body) = req.into_parts();
-
-    // Extract Host header
-    let hostname = parts.headers.get("host")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string();
-
-    // Check if this is a dstack custom domain
-    if state.dns_resolver.is_dstack_custom_domain(&hostname).await {
-        info!("Health endpoint accessed with dstack custom domain: {}, relaying to backend", hostname);
-
-        // Relay to the backend with full request
-        return relay_to_backend(&state, &hostname, "/health", &parts.method, &parts.headers, body).await;
-    }
-
-    info!("Health endpoint accessed with non-dstack domain: {}, serving relay server health", hostname);
-    (StatusCode::OK, "OK").into_response()
+    handle_request_with_domain_check(&state, "/health", req, || {
+        (StatusCode::OK, "OK").into_response()
+    })
+    .await
 }
 
 /// Root handler for the "/" path
@@ -439,32 +443,15 @@ async fn root_handler(
     State(state): State<AppState>,
     req: Request,
 ) -> Response {
-    let (parts, body) = req.into_parts();
-
-    // Extract Host header
-    let hostname = parts.headers.get("host")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string();
-
-    // Check if this is a dstack custom domain
-    if state.dns_resolver.is_dstack_custom_domain(&hostname).await {
-        info!("Root path: relaying request for dstack domain {}", hostname);
-
-        // Relay to the backend with full request
-        return relay_to_backend(&state, &hostname, "/", &parts.method, &parts.headers, body).await;
-    }
-
-    // Not a dstack domain - serve relay server info page
-    info!("Root path: serving relay server info for non-dstack domain {}", hostname);
-
-    let mode_description = match state.relay_mode {
+    let relay_mode = state.relay_mode.clone();
+    handle_request_with_domain_check(&state, "/", req, move || {
+        let mode_description = match relay_mode {
         RelayMode::Redirect => "307 redirect (default)",
         RelayMode::Proxy => "HTTP proxy/tunnel",
     };
 
-    let info = format!(
-        r#"
+        let info = format!(
+            r#"
 dstack HTTP-01 ACME Challenge Relay Server
 
 This server relays ACME HTTP-01 challenges to dstack applications.
@@ -493,10 +480,12 @@ Proxy Mode Features:
 
 Status: Running
 "#,
-        mode_description
-    );
+            mode_description
+        );
 
-    (StatusCode::OK, info).into_response()
+        (StatusCode::OK, info).into_response()
+    })
+    .await
 }
 
 /// Catch-all handler for any path not matched by specific routes (except /)
@@ -506,30 +495,15 @@ async fn catch_all_handler(
     Path(path): Path<String>,
     req: Request,
 ) -> Response {
-    let (parts, body) = req.into_parts();
-
-    // Extract Host header
-    let hostname = parts.headers.get("host")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string();
-
     // Normalize path (add leading slash if needed)
     let normalized_path = if path.starts_with('/') {
-        path.clone()
+        path
     } else {
         format!("/{}", path)
     };
 
-    // Check if this is a dstack custom domain
-    if state.dns_resolver.is_dstack_custom_domain(&hostname).await {
-        info!("Catch-all: relaying request for dstack domain {} to path {}", hostname, normalized_path);
-
-        // Relay to the backend with full request
-        return relay_to_backend(&state, &hostname, &normalized_path, &parts.method, &parts.headers, body).await;
-    }
-
-    // Not a dstack domain - return 404
-    info!("Catch-all: returning 404 for non-dstack domain {} path {}", hostname, normalized_path);
-    (StatusCode::NOT_FOUND, "Not Found").into_response()
+    handle_request_with_domain_check(&state, &normalized_path, req, || {
+        (StatusCode::NOT_FOUND, "Not Found").into_response()
+    })
+    .await
 }
